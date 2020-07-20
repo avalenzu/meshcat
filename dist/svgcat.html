@@ -14,6 +14,47 @@
     .attr("height", 600)
     .attr("viewBox", `-4 -4 8 8`);
 
+  // World frame's pose in the viewBox 2D frame (column-order)
+  // This is a 3x4 view projection matrix. For planar orthographic
+  // projection, use:
+  //  [ <x axis select> x_axis_shift
+  //    <y axis select> y_axis_shift
+  //     0, 0, 0, 1]  % homogenizer
+  //  e.g.
+  //    [ 1, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 1]
+  //  would give a top-down view (i.e squashing the z axis), and would shift
+  //  things in the x axis positively by 0.5.
+  //  X_VW can be any valid view projection matrix. If the bottom row is
+  //  [0, 0, 0, 1], the view projection will be an orthographic projection.
+  var X_VW = [ 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+
+  // Multiply 4x4 RigidBodyTransforms (in column-order).
+  function multiply_transform3d(X_AB, X_BC) {
+    let ma = X_AB
+    let mb = X_BC
+    let X_AC = []
+
+    for (let i = 0; i < 4; i++) {
+      let row = [ma[i], ma[i + 4], ma[i + 8], ma[i + 12]]
+      console.log("row", X_AB[i+4], row)
+      for (let j = 0; j < 4; j++) {
+        let k = j * 4
+        let col = [mb[k], mb[k + 1], mb[k + 2], mb[k + 3]]
+        let result = row[0] * col[0] + row[1] * col[1] + row[2] * col[2] + row[3] * col[3]
+        console.log("X_AC", i, k, row, col, result)
+        X_AC[i + k] = result
+      }
+    }
+    console.log("r X_AC", ma, mb, X_AC)
+    return X_AC
+  }
+
+  // Multiplies X_VW * X_WG and homogenizes, then drops the z-coordinate to get the 2x3 matrix transform.
+  function get_matrix2d(X_WG) {
+    // TODO: Finish this.  For now, I'll just pick out the x-z components
+    return [X_WG[0], X_WG[1], X_WG[8], X_WG[9], X_WG[12], X_WG[13]];
+  }
+
   function toColor(num) {
       num >>>= 0;
       var b = num & 0xFF,
@@ -23,34 +64,50 @@
       return "rgba(" + [r, g, b, a].join(",") + ")";
   }
 
+  // We flatten the hierarchy of groups into g.
   function get_path_group(path_str) {
-    let path = path_str.split("/").filter(x => x.length > 0);
-    if (path === undefined || path.length == 0) {
-      return;
+    let id = CSS.escape(path_str.replace(/\//g,'_').replace(/\:/g,'_'));
+    // This is not working now... it's not finding the ID's it's creating.
+    let group = svg.select('g#'+id);
+    if (group.empty()) {
+      let X_WG = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      let parent_group = get_parent_group(path_str);
+      if (parent_group !== undefined) {
+        X_WG = parent_group.attr("X_WG");
+      }
+      group = svg.append("g").attr("id", id).attr("X_WG", X_WG);
+      console.log("creating", id)
     }
+    return group;
+  }
 
-    function get_group(parent, path) {
-      let id = path.shift();  // removes the first element.
-      id = CSS.escape(id);    // take care of special characters.
-      let group = parent.select('g#'+id);
-      if (group.empty()) {
-        group = parent.append("g").attr("id", id);
-      }
-      if (path.length == 0) {
-        return group;
-      } else {
-        return get_group(group, path);
-      }
+  function get_parent_group(path_str) {
+    let last_slash = path_str.lastIndexOf('/');
+    if (last_slash > 0) {
+      return get_path_group(path_str.substring(0, last_slash));
     }
-    return get_group(svg, path);
   }
 
   function handle_command(cmd) {
     if (cmd.type == "set_transform") {
+      console.log("set_transform", cmd);
       let svg_group = get_path_group(cmd.path);
-      
-      svg_group.attr("transform3d", cmd.matrix);
-      svg_group.select('g > g'); // should select immediate children.
+
+      let X_PG = cmd.matrix;
+      let X_WG = X_PG;
+      // TODO: fix this
+//      let parent_group = get_parent_group(cmd.path);
+//      if (parent_group !== undefined) {
+//        let X_WP = parent_group.attr("X_WG");         
+//        X_WG = multiply_transform3d(X_WP, X_PG);
+//      }
+//      console.log("X_WG", X_WG);
+      svg_group.attr("X_WG", X_WG);
+      svg_group.attr("X_PG", X_PG);
+      svg_group.attr("transform", `matrix(${get_matrix2d(X_WG).join(',')})`);
+
+      // TODO: update child transforms.
+
     } else if (cmd.type == "set_object") {
       console.log("set_object", cmd);
       let svg_group = get_path_group(cmd.path);
