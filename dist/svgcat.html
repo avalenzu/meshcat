@@ -5,6 +5,7 @@
 
 <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.16.0/d3.min.js"></script>
+<!-- <script src="https://unpkg.com/rematrix"></script> -->
 <script>
   var svg = d3
     .select("#svgcat")
@@ -13,22 +14,12 @@
     .attr("height", 600)
     .attr("viewBox", `-4 -4 8 8`);
 
-/*
-  svg.append("g").attr("id", "meshcat")
-    .append("rect")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("width", 1)
-    .attr("height", 2)
-    .attr("transform", `matrix(1,0,0,1,0,0)`);
-*/
-
   function toColor(num) {
       num >>>= 0;
       var b = num & 0xFF,
           g = (num & 0xFF00) >>> 8,
           r = (num & 0xFF0000) >>> 16,
-          a = ( (num & 0xFF000000) >>> 24 ) / 255 ;
+          a = 1; //( (num & 0xFF000000) >>> 24 ) / 255 ;
       return "rgba(" + [r, g, b, a].join(",") + ")";
   }
 
@@ -38,15 +29,17 @@
       return;
     }
 
-    function get_group(parent, remaining_path) {
-      let group = parent.select('g#'+remaining_path[0]);
+    function get_group(parent, path) {
+      let id = path.shift();  // removes the first element.
+      id = CSS.escape(id);    // take care of special characters.
+      let group = parent.select('g#'+id);
       if (group.empty()) {
-        group = parent.append("g").attr("id", remaining_path[0]);
+        group = parent.append("g").attr("id", id);
       }
-      if (remaining_path.length == 1) {
+      if (path.length == 0) {
         return group;
       } else {
-        return get_group(group, remaining_path.shift());
+        return get_group(group, path);
       }
     }
     return get_group(svg, path);
@@ -56,10 +49,8 @@
     if (cmd.type == "set_transform") {
       let svg_group = get_path_group(cmd.path);
       
-      // TODO: Generalize this to different view angles.
-      let m = cmd.matrix;
-      svg_group.attr("transform", 
-        `matrix(${m[0]}, ${m[4]}, ${m[1]}, ${m[5]}, ${m[3]}, ${m[7]})`);
+      svg_group.attr("transform3d", cmd.matrix);
+      svg_group.select('g > g'); // should select immediate children.
     } else if (cmd.type == "set_object") {
       console.log("set_object", cmd);
       let svg_group = get_path_group(cmd.path);
