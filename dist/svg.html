@@ -1,15 +1,30 @@
-var THREE = require('three');
-var msgpack = require('msgpack-lite');
-var dat = require('dat.gui').default; // TODO: why is .default needed?
-import {BufferGeometryUtils} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import {OBJLoader2} from 'three/examples/jsm/loaders/OBJLoader2.js';
-import {ColladaLoader} from 'three/examples/jsm/loaders/ColladaLoader.js';
-import {MTLLoader} from 'three/examples/jsm/loaders/MTLLoader.js';
-import {MtlObjBridge} from 'three/examples/jsm/loaders/obj2/bridge/MtlObjBridge.js';
-import {STLLoader} from 'three/examples/jsm/loaders/STLLoader.js';
-import {SVGRenderer} from 'three/examples/jsm/renderers/SVGRenderer.js';
-import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
-require('ccapture.js');
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset=utf-8>
+		<title>MeshCat</title>
+	</head>
+	<body>
+        <div id="meshcat-pane">
+        </div>
+
+        <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+        <script type="text/javascript" src="https://rawgit.com/spite/ccapture.js/master/build/CCapture.all.min.js"></script>
+
+<script type="module">
+//var THREE = require('three');
+//var dat = require('dat.gui').default; // TODO: why is .default needed?
+import * as THREE from 'https://unpkg.com/three/build/three.module.js';
+import {BufferGeometryUtils} from 'https://unpkg.com/three/examples/jsm/utils/BufferGeometryUtils.js';
+import {OBJLoader2} from 'https://unpkg.com/three/examples/jsm/loaders/OBJLoader2.js';
+import {ColladaLoader} from 'https://unpkg.com/three/examples/jsm/loaders/ColladaLoader.js';
+import {MTLLoader} from 'https://unpkg.com/three/examples/jsm/loaders/MTLLoader.js';
+import {MtlObjBridge} from 'https://unpkg.com/three/examples/jsm/loaders/obj2/bridge/MtlObjBridge.js';
+import {STLLoader} from 'https://unpkg.com/three/examples/jsm/loaders/STLLoader.js';
+import {SVGRenderer} from 'https://unpkg.com/three/examples/jsm/renderers/SVGRenderer.js';
+import {OrbitControls} from 'https://unpkg.com/three/examples/jsm/controls/OrbitControls.js';
+//require('ccapture.js');
 
 // Merges a hierarchy of collada mesh geometries into a single
 // `BufferGeometry` object:
@@ -693,7 +708,7 @@ class Viewer {
     constructor(dom_element, animate) {
         this.dom_element = dom_element;
         this.renderer = new SVGRenderer();
-/*        
+        /*
         this.renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -764,7 +779,6 @@ class Viewer {
     }
 
     add_default_scene_elements() {
-/*        
         var spot_light = this.create_default_spot_light();
         this.set_object(["Lights", "SpotLight"], spot_light);
         // By default, the spot light is turned off, since
@@ -792,11 +806,11 @@ class Viewer {
         point_light_nx.shadow.camera.far = 10.;      // default 500
         point_light_nx.shadow.bias = -0.001;      // Default 0
         this.set_object(["Lights", "PointLightPositiveX"], point_light_nx);
-*/
+
         var ambient_light = new THREE.AmbientLight(0xffffff, 0.3);
         ambient_light.intensity = 0.6;
         this.set_object(["Lights", "AmbientLight"], ambient_light);
-/*
+
         var fill_light = new THREE.DirectionalLight(0xffffff, 0.4);
         fill_light.position.set(-10, -10, 0);
         this.set_object(["Lights", "FillLight"], fill_light);
@@ -808,7 +822,6 @@ class Viewer {
         var axes = new THREE.AxesHelper(0.5);
         // axes.visible = false;
         this.set_object(["Axes"], axes);
-*/        
     }
 
     create_scene_tree() {
@@ -852,6 +865,7 @@ class Viewer {
     render() {
         this.controls.update();
         this.camera.updateProjectionMatrix();
+        console.log(this.camera)
         this.renderer.render(this.scene, this.camera);
         this.animator.after_render();
         this.needs_render = false;
@@ -1073,4 +1087,26 @@ style.sheet.insertRule(`
         padding: 0 0 0 0px;
     }`);
 
-export { Viewer, THREE };
+var viewer = new Viewer(document.getElementById("meshcat-pane"));
+try {
+    viewer.connect();
+} catch (e) {
+    console.info("Not connected to MeshCat websocket server: ", e);
+}
+</script>
+
+
+         <style>
+            body {
+                margin: 0;
+            }
+
+            #meshcat-pane {
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden;
+            }
+        </style>
+        <script id="embedded-json"></script>
+	</body>
+</html>

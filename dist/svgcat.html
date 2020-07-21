@@ -27,6 +27,7 @@
   //  X_VW can be any valid view projection matrix. If the bottom row is
   //  [0, 0, 0, 1], the view projection will be an orthographic projection.
   var X_VW = [ 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+  var tree = {};
 
   // Multiply 4x4 RigidBodyTransforms (in column-order).
   function multiply_transform3d(X_AB, X_BC) {
@@ -34,23 +35,21 @@
     let mb = X_BC
     let X_AC = []
 
+    // TODO: simply looping through the multiplies should be more efficient.
     for (let i = 0; i < 4; i++) {
       let row = [ma[i], ma[i + 4], ma[i + 8], ma[i + 12]]
-      console.log("row", X_AB[i+4], row)
       for (let j = 0; j < 4; j++) {
         let k = j * 4
         let col = [mb[k], mb[k + 1], mb[k + 2], mb[k + 3]]
         let result = row[0] * col[0] + row[1] * col[1] + row[2] * col[2] + row[3] * col[3]
-        console.log("X_AC", i, k, row, col, result)
         X_AC[i + k] = result
       }
     }
-    console.log("r X_AC", ma, mb, X_AC)
     return X_AC
   }
 
-  // Multiplies X_VW * X_WG and homogenizes, then drops the z-coordinate to get the 2x3 matrix transform.
-  function get_matrix2d(X_WG) {
+  // Multiplies X_VW * X_WG * pts and homogenizes
+  function project_points(X_WG, points) {
     // TODO: Finish this.  For now, I'll just pick out the x-z components
     return [X_WG[0], X_WG[1], X_WG[8], X_WG[9], X_WG[12], X_WG[13]];
   }
@@ -64,53 +63,53 @@
       return "rgba(" + [r, g, b, a].join(",") + ")";
   }
 
-  // We flatten the hierarchy of groups into g.
-  function get_path_group(path_str) {
-    let id = CSS.escape(path_str.replace(/\//g,'_').replace(/\:/g,'_'));
-    // This is not working now... it's not finding the ID's it's creating.
-    let group = svg.select('g#'+id);
-    if (group.empty()) {
-      let X_WG = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-      let parent_group = get_parent_group(path_str);
-      if (parent_group !== undefined) {
-        X_WG = parent_group.attr("X_WG");
-      }
-      group = svg.append("g").attr("id", id).attr("X_WG", X_WG);
-      console.log("creating", id)
-    }
-    return group;
+  function hashCode(s) {
+    var h = 0, l = s.length, i = 0;
+    if ( l > 0 )
+      while (i < l)
+        h = (h << 5) - h + s.charCodeAt(i++) | 0;
+    return h;
   }
 
-  function get_parent_group(path_str) {
-    let last_slash = path_str.lastIndexOf('/');
-    if (last_slash > 0) {
-      return get_path_group(path_str.substring(0, last_slash));
+  function get_id(path_str) {
+    let id = 'u' + hashCode(path_str);
+    if (!(id in tree)) {
+      // Create the node
+      tree[id] = {};
+
+      // Find it's parent
+      let last_slash = path_str.lastIndexOf('/');
+      if (last_slash > 0) {
+        let parent = get_id(path_str.substring(0, last_slash));
+        tree[id].X_WG = tree[parent].X_WG;
+        tree[id].parent = parent;
+      } else {
+        // Use 4x4 identity matrix.
+        tree[id].X_WG = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      }
     }
+    return id;
   }
 
   function handle_command(cmd) {
     if (cmd.type == "set_transform") {
       console.log("set_transform", cmd);
-      let svg_group = get_path_group(cmd.path);
+      let id = get_id(cmd.path);
 
       let X_PG = cmd.matrix;
-      let X_WG = X_PG;
-      // TODO: fix this
-//      let parent_group = get_parent_group(cmd.path);
-//      if (parent_group !== undefined) {
-//        let X_WP = parent_group.attr("X_WG");         
-//        X_WG = multiply_transform3d(X_WP, X_PG);
-//      }
-//      console.log("X_WG", X_WG);
-      svg_group.attr("X_WG", X_WG);
-      svg_group.attr("X_PG", X_PG);
-      svg_group.attr("transform", `matrix(${get_matrix2d(X_WG).join(',')})`);
-
-      // TODO: update child transforms.
+      if ("parent" in tree[id]) {
+        X_WP = tree[tree[id].parent].X_WG;
+        tree[id].X_WG = multiply_transform3d(X_WP, X_PG);
+      } else {
+        tree[id].X_WG = X_PG;
+      }
+      tree[id].X_PG = X_PG;
+      
+      // TODO: update descendents in tree.
 
     } else if (cmd.type == "set_object") {
       console.log("set_object", cmd);
-      let svg_group = get_path_group(cmd.path);
+      let id = get_id(cmd.path);
 
       // TODO: Parse actual UUIDs and match materials to geometries.
       // For now, I'll just process all the materials, and allow them to set the default color/opacity for this object.
@@ -120,23 +119,32 @@
         color = toColor(mat.color);
         opacity = mat.opacity;
       });
-      console.log("color", color);
 
-      // TODO: Remove any non-group children of svg_group.
+      // TODO: Remove existing geometries from svg.
+      tree[id].geometries = [];
+      
       cmd.object.geometries.forEach(geom => {
         if (geom.type == "BoxGeometry") {
-          let box = svg_group.append("rect")
-                   .attr("x", -geom.width/2.0)
-                   .attr("y", -geom.depth/2.0)
-                   .attr("width", geom.width)
-                   .attr("height", geom.height)
+          let x = geom.width/2.0*[-1, -1, 1, 1, -1, -1, 1, 1];
+          let y = geom.depth/2.0*[-1, 1, -1, 1, -1, 1, -1, 1];
+          let z = geom.height/2.0*[-1, -1, -1, -1, 1, 1, 1, 1];
+          let pts = d3.range(8).map(
+            function (i) { return [x[i], y[i], z[i]]; }
+          );
+
+          
+
+          let poly = svg.append("polygon")
+                   .attr("points", )
                    .attr("fill", color)
                    .attr("fill-opacity", opacity)
-                   // TODO: don't hard code this.
+                   // TODO: don't hard code the width.
                    .attr("stroke-width", 0.01)
-                   .attr("stroke", "black");
+                   .attr("stroke", "black")
+                   .data(pts);
+          tree[id].geometries.push(poly);
         }
-      }); 
+      });
     } else {
       console.log("cmd", cmd);
     }
